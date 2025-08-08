@@ -2,3 +2,50 @@ venv
 venv_*
 env
 __pycache__
+
+*.py[cod]
+*.so
+*.pyo
+
+# Jupyter 노트북 체크포인트
+.ipynb_checkpoints/
+
+# OS/에디터 관련
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 모델 체크포인트/학습 결과
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# 압축/아카이브 파일
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# 데이터셋 (raw, processed)
+data/
+datasets/
+fastmri/
+*.h5
+
+# 캐시 디렉토리
+.cache/
+tmp/
+logs/
+wandb/
+runs/
+
+# 환경 관련
+.env
+*.egg-info/
+build/
+dist/
+
+# CUDA 캐시
+*.nv_fatbin

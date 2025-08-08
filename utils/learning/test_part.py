@@ -5,16 +5,17 @@ from collections import defaultdict
 from utils.common.utils import save_reconstructions
 from utils.data.load_data import create_data_loaders
 from utils.model.varnet import VarNet
+from utils.model.fastmri.data.subsample import create_mask_func_for_maskk_type
 
 def test(args, model, data_loader):
     model.eval()
     reconstructions = defaultdict(dict)
     
     with torch.no_grad():
-        for (mask, kspace, _, _, fnames, slices) in data_loader:
-            kspace = kspace.cuda(non_blocking=True)
+        for (masked_kspace, mask, _target, fnames, slices, _max_value, _crop_size,) in data_loader:
+            masked_kspace = masked_kspace.cuda(non_blocking=True)
             mask = mask.cuda(non_blocking=True)
-            output = model(kspace, mask)
+            output = model(masked_kspace, mask)
 
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
@@ -40,7 +41,16 @@ def forward(args):
     checkpoint = torch.load(args.exp_dir / 'best_model.pt', map_location='cpu', weights_only=False)
     print(checkpoint['epoch'], checkpoint['best_val_loss'].item())
     model.load_state_dict(checkpoint['model'])
+
+    cf = args.center_fractions
+    acc = args.accelerations
+    if not isinstance(cf, (list, tuple)):
+        cf = [cf]
+    if not isinstance(acc, (list, tuple)):
+        acc = [acc]
     
-    forward_loader = create_data_loaders(data_path = args.data_path, args = args, isforward = True)
+    mask = create_mask_for_mask_type(args.mask_type, cf,acc)
+    
+    forward_loader = create_data_loaders(data_path = args.data_path, args = args, mask_func=mask, isforward = True)
     reconstructions, inputs = test(args, model, forward_loader)
     save_reconstructions(reconstructions, args.forward_dir, inputs=inputs)

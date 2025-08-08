@@ -1,8 +1,14 @@
 python train.py \
   -b 1 \
-  -e 5 \
-  -l 0.001 \
-  -r 10 \
+  -e 10 \
+  -l 0.0003 \
   -n 'test_Varnet' \
   -t '/root/Data/train/' \
-  -v '/root/Data/val/'
+  -v '/root/Data/val/' \
+  --num_workers 4 \
+  --grad-acc 2 \
+  --aug_on \
+  --aug_delay 1 \
+  --aug_strength 0.55 \
+  
+  

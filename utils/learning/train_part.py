@@ -5,45 +5,71 @@ import torch.nn as nn
 import time
 from pathlib import Path
 import copy
+from torch.cuda.amp import autocast, GradScaler
 
+from mraugment.data_augment import DataAugmentor
+from mraugment.data_transforms import VarNetDataTransform
+from utils.model.fastmri.data.subsample import create_mask_for_mask_type
 from collections import defaultdict
 from utils.data.load_data import create_data_loaders
 from utils.common.utils import save_reconstructions, ssim_loss
 from utils.common.loss_function import SSIMLoss
 from utils.model.varnet import VarNet
 
+from utils.common.custom_mask import BimodalGaussianMaskFunc
+from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
+
 import os
 
-def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):
-    model.train()
+from torch.cuda.amp import autocast, GradScaler
+
+def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):   
+    model.train() 
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
     total_loss = 0.
 
-    for iter, data in enumerate(data_loader):
-        mask, kspace, target, maximum, _, _ = data
-        mask = mask.cuda(non_blocking=True)
-        kspace = kspace.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
-        maximum = maximum.cuda(non_blocking=True)
+    accumulation_steps = args.grad_acc
+    optimizer.zero_grad()
 
-        output = model(kspace, mask)
+    for iter, data in enumerate(data_loader):
+        masked_kspace, mask, target, _fname, _slice_num, maximum, _crop_size = data
+        masked_kspace = masked_kspace.cuda(non_blocking=True)
+        mask           = mask.cuda(non_blocking=True)
+        target         = target.cuda(non_blocking=True)
+        maximum        = maximum.cuda(non_blocking=True)
+
+        output = model(masked_kspace, mask)
         loss = loss_type(output, target, maximum)
-        optimizer.zero_grad()
+        
+        loss = loss / accumulation_steps    
         loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
+        total_loss_val += loss.item()
+
+        # gradient accumulation
+        if (iter + 1) % accumulation_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+            
 
         if iter % args.report_interval == 0:
+            curr_loss = loss.item() * accumulation_steps
             print(
                 f'Epoch = [{epoch:3d}/{args.num_epochs:3d}] '
-                f'Iter = [{iter:4d}/{len(data_loader):4d}] '
-                f'Loss = {loss.item():.4g} '
-                f'Time = {time.perf_counter() - start_iter:.4f}s',
+                f'Iter = [{iter:4d}/{len_loader:4d}] '
+                f'Loss = {curr_loss:.4g} '
+                f'Time = {time.perf_counter() - start_iter:.4f}s'
             )
             start_iter = time.perf_counter()
-    total_loss = total_loss / len_loader
-    return total_loss, time.perf_counter() - start_epoch
+
+    # 마지막 남은 gradient 처리
+    if len_loader % accumulation_steps != 0:
+        optimizer.step()
+        optimizer.zero_grad()
+
+    avg_loss = total_loss_val / len_loader
+    return avg_loss, time.perf_counter() - start_epoch
+
 
 
 def validate(args, model, data_loader):
@@ -54,10 +80,10 @@ def validate(args, model, data_loader):
 
     with torch.no_grad():
         for iter, data in enumerate(data_loader):
-            mask, kspace, target, _, fnames, slices = data
-            kspace = kspace.cuda(non_blocking=True)
+            masked_kspace, mask, target, _fname, _slice_num, maximum, _crop_size = data
+            masked_kspace = kspace.cuda(non_blocking=True)
             mask = mask.cuda(non_blocking=True)
-            output = model(kspace, mask)
+            output = model(masked_kspace, mask)
 
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
@@ -73,6 +99,7 @@ def validate(args, model, data_loader):
         )
     metric_loss = sum([ssim_loss(targets[fname], reconstructions[fname]) for fname in reconstructions])
     num_subjects = len(reconstructions)
+    torch.cuda.empty_cache()
     return metric_loss, num_subjects, reconstructions, targets, None, time.perf_counter() - start
 
 
@@ -100,30 +127,84 @@ def train(args):
     model = VarNet(num_cascades=args.cascade, 
                    chans=args.chans, 
                    sens_chans=args.sens_chans)
-    model.to(device=device)
+    model.to(device)
+    
+    # 2. [반영] Augmentor의 에포크 참조 방식 수정
+    epoch_holder = {'cur': 0}
+    current_epoch_fn = lambda: epoch_holder['cur']
+    augmentor = DataAugmentor(args, current_epoch_fn)
 
+    # 3. epoch별로 mask_train 수행해야함
+    mask_train = None
+    
+    # 4. [반영] PyTorch 네이티브 스케줄러 및 AdamW 옵티마이저 적용
     loss_type = SSIMLoss().to(device=device)
-    optimizer = torch.optim.Adam(model.parameters(), args.lr)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), 
+        lr=args.lr, 
+        weight_decay=args.weight_decay, eps=1e-06
+    )
+    warmup_scheduler = LinearLR(optimizer, start_factor=1e-10, end_factor=1.0, total_iters=args.warmup_epochs)
+    main_scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs - args.warmup_epochs, eta_min=1e-7)
+    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, main_scheduler], milestones=[args.warmup_epochs])
 
     best_val_loss = 1.
     start_epoch = 0
 
+    #val mask의 경우도 acc에 따라 mask를 다르게 적용하려면 여기가 아닌 varnetdatatransform에 직접 구현해야함.
+    #여기는 기본 value
+    cf = args.center_fractions
+    acc = args.accelerations
+    if not isinstance(cf, (list, tuple)):
+        cf = [cf]
+    if not isinstance(acc, (list, tuple)):
+        acc = [acc]
+    mask = create_mask_for_mask_type(args.mask_type, cf,acc)
     
-    train_loader = create_data_loaders(data_path = args.data_path_train, args = args, shuffle=True)
-    val_loader = create_data_loaders(data_path = args.data_path_val, args = args)
+    train_loader = create_data_loaders(args.data_path_train, args, augmentor, mask_train, shuffle = True)
+    val_loader = create_data_loaders(args.data_path_val, args, augmentor, mask)
     
     val_loss_log = np.empty((0, 2))
+    train_loss_log = np.empty((0,2))
+    is_dir_created = False
+    
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
+        epoch_holder['cur'] = epoch
+        
+        # [반영] 첫 에포크 후 폴더 생성 로직
+        if not is_dir_created:
+            print(f"First epoch successful. Creating result directory at: {args.val_loss_dir}")
+            args.exp_dir.mkdir(parents=True, exist_ok=True)
+            args.val_dir.mkdir(parents=True, exist_ok=True)
+            with open(args.val_loss_dir / 'args.txt', 'w') as f:
+                for k, v in sorted(vars(args).items()):
+                    if isinstance(v, Path):
+                        f.write(f'{k}: {str(v)}\n')
+                    else:
+                        f.write(f'{k}: {v}\n')
+            is_dir_created = True
+        #train maskfunction 위치 수정.
+        train_loader.dataset.transform.mask_func=BimodalGaussianMaskFunc(
+            center_fractions=[0.08, 0.04],
+            min_accel=4,
+            max_accel=12,
+            mean1=4.0, stddev1=1.5,
+            mean2=8.0, stddev2=1.5,
+            mix_weight1=0.4
+        )
         
         train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type)
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
         
         val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
-        file_path = os.path.join(args.val_loss_dir, "val_loss_log")
-        np.save(file_path, val_loss_log)
-        print(f"loss file saved! {file_path}")
-
+        train_loss_log = np.append(train_loss_log, np.array([[epoch,train_loss]]),axis=0)
+        v_file_path = os.path.join(args.val_loss_dir, "val_loss_log")
+        t_file_path = os.path.join(args.val_loss_dir,"train_loss_log")
+        np.save(v_file_path, val_loss_log)
+        np.save(t_file_path, train_loss_log)
+        print(f"val loss file saved! {v_file_path}")
+        print(f"train loss file saved! {t_file_path}")
         train_loss = torch.tensor(train_loss).cuda(non_blocking=True)
         val_loss = torch.tensor(val_loss).cuda(non_blocking=True)
         num_subjects = torch.tensor(num_subjects).cuda(non_blocking=True)
@@ -138,6 +219,7 @@ def train(args):
             f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
             f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
         )
+        print(f"Max memory: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB")
 
         if is_new_best:
             print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@NewRecord@@@@@@@@@@@@@@@@@@@@@@@@@@@@")

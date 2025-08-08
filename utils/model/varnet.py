@@ -7,7 +7,7 @@ LICENSE file in the root directory of this source tree.
 
 import math
 from typing import List, Tuple
-
+import numpy as np
 import fastmri
 import torch
 import torch.nn as nn
@@ -16,7 +16,7 @@ from fastmri.data import transforms
 
 from unet import Unet
 from utils.common.utils import center_crop
-
+import torch.utils.checkpoint as cp
 
 class NormUnet(nn.Module):
     """
@@ -235,15 +235,31 @@ class VarNet(nn.Module):
             [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
         )
 
+    def _checkpointed_cascade(self, cascade_module, k, m, ma, s):
+        return cascade_module(k, m, ma, s)
+    
+    #gradient checkpointing 수정
     def forward(self, masked_kspace: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         sens_maps = self.sens_net(masked_kspace, mask)
         kspace_pred = masked_kspace.clone()
 
-        for cascade in self.cascades:
-            kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
+        def custom_forward(*inputs):
+            return cascade(*inputs)
+        
+        T = len(self.cascades)
+        num_ckpt = int(np.sqrt(T))
+        ckpt_indices = sorted(set(np.linspace(0, T - 1, num=num_ckpt, dtype=int)))
+
+        for i, cascade in enumerate(self.cascades):
+            if i in ckpt_indices:
+                kspace_pred = cp.checkpoint(self._checkpointed_cascade, cascade, kspace_pred, masked_kspace, mask, sens_maps, use_reentrant=True)
+            else:
+                kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
+        
         result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace_pred)), dim=1)
         result = center_crop(result, 384, 384)
         return result
+
 
 
 class VarNetBlock(nn.Module):

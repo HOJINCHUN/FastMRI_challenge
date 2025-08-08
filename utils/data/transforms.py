@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 
+#얘가 무모모
+
 def to_tensor(data):
     """
     Convert numpy array to PyTorch tensor. For complex arrays, the real and imaginary parts

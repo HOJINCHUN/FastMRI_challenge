@@ -1,10 +1,20 @@
 import h5py
 import random
-from utils.data.transforms import DataTransform
+from typing import Optional
+from functools import partial
+
+from mraugment.data_transforms import VarNetDataTransform
+from utils.model.fastmri.data.subsample import MaskFunc
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import numpy as np
 
+#기능 1. CPU 병렬화할 때 각 worker의 시드를 다르게 설정. 2. 외부 리소스 초기화
+def seed_worker(args, worker_id): 
+    worker_seed = args.seed + worker_id
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+    
 class SliceData(Dataset):
     def __init__(self, root, transform, input_key, target_key, forward=False):
         self.transform = transform
@@ -13,7 +23,7 @@ class SliceData(Dataset):
         self.forward = forward
         self.image_examples = []
         self.kspace_examples = []
-
+        #isforward가 아니면 image + kspace. isforward가 true면 kspace에서 정보를 가져옴.
         if not forward:
             image_files = list(Path(root / "image").iterdir())
             for fname in sorted(image_files):
@@ -51,7 +61,7 @@ class SliceData(Dataset):
             raise ValueError(f"Image file {image_fname.name} does not match kspace file {kspace_fname.name}")
 
         with h5py.File(kspace_fname, "r") as hf:
-            input = hf[self.input_key][dataslice]
+            kspace = hf[self.input_key][dataslice]
             mask =  np.array(hf["mask"])
         if self.forward:
             target = -1
@@ -60,20 +70,30 @@ class SliceData(Dataset):
             with h5py.File(image_fname, "r") as hf:
                 target = hf[self.target_key][dataslice]
                 attrs = dict(hf.attrs)
-            
-        return self.transform(mask, input, target, attrs, kspace_fname.name, dataslice)
 
+        return self.transform(
+            kspace,
+            mask,
+            target,
+            attrs,
+            kspace_fname.name,
+            dataslice,            # this is your slice_num
+        )
 
-def create_data_loaders(data_path, args, shuffle=False, isforward=False):
+def create_data_loaders(data_path, args, augmentor = None, mask_func: Optional[MaskFunc] = None, use_seed: bool = True, shuffle=False, isforward=False):
+    istrain=False
     if isforward == False:
         max_key_ = args.max_key
         target_key_ = args.target_key
+        if shuffle == True: 
+            istrain=True            
     else:
         max_key_ = -1
         target_key_ = -1
+    
     data_storage = SliceData(
         root=data_path,
-        transform=DataTransform(isforward, max_key_),
+        transform=VarNetDataTransform(istrain, augmentor, mask_func,use_seed),
         input_key=args.input_key,
         target_key=target_key_,
         forward = isforward
@@ -83,5 +103,10 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False):
         dataset=data_storage,
         batch_size=args.batch_size,
         shuffle=shuffle,
+        num_workers = args.num_workers, 
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=4
+        worker_init_fn=lambda worker_id: seed_worker(args, worker_id)
     )
     return data_loader

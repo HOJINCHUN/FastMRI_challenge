@@ -3,10 +3,11 @@ Copyright (c) Facebook, Inc. and its affiliates.
 This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 """
-
+import math
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.utils.checkpoint import checkpoint
 
 
 class Unet(nn.Module):
@@ -64,29 +65,64 @@ class Unet(nn.Module):
             )
         )
 
-    def forward(self, image: torch.Tensor) -> torch.Tensor:
+
         """
         Args:
             image: Input 4D tensor of shape `(N, in_chans, H, W)`.
         Returns:
             Output tensor of shape `(N, out_chans, H, W)`.
         """
-
-        stack = []
-        output = image
-
-        # apply down-sampling layers
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
+        # ─── 1) 블록(모듈) 리스트 만들기 ──────────────────────
+        modules = []
+        # down-sample ConvBlock
         for layer in self.down_sample_layers:
-            output = layer(output)
+            modules.append(layer)
+        # bottleneck ConvBlock
+        modules.append(self.conv)
+        # up-sample: TransposeConvBlock + ConvBlock(or Sequential)
+        for tconv, conv in zip(self.up_transpose_conv, self.up_conv):
+            modules.append(tconv)
+            modules.append(conv)
+
+        # ─── 2) 체크포인트 주기 계산 ───────────────────────────
+        T = len(modules)                   # 전체 블록 개수
+        m = max(1, int(math.sqrt(T)))      # 세그먼트 개수 ≈ √T
+        interval = max(1, T // m)          # 고정 간격
+        ckpt_indices = set(range(0, T, interval))
+        # 예: T=13 → m=3 → interval=4 → ckpt_indices={0,4,8,12}
+
+        # ─── 3) forward 루프 with checkpoint ─────────────────
+        output = image
+        stack = []
+        idx = 0
+        
+        # down-sample
+        for layer in self.down_sample_layers:
+            if idx in ckpt_indices:
+                output = checkpoint(layer, output)
+            else:
+                output = layer(output)
             stack.append(output)
-            output = F.avg_pool2d(output, kernel_size=2, stride=2, padding=0)
+            output = F.avg_pool2d(output, 2)
+            idx += 1
 
-        output = self.conv(output)
+        
+        if idx in ckpt_indices:
+            output = checkpoint(self.conv, output)
+        else:
+            output = self.conv(output)
+        idx += 1
 
-        # apply up-sampling layers
-        for transpose_conv, conv in zip(self.up_transpose_conv, self.up_conv):
+        # up-sample
+        for tconv, conv in zip(self.up_transpose_conv, self.up_conv):
             downsample_layer = stack.pop()
-            output = transpose_conv(output)
+            # transpose conv
+            if idx in ckpt_indices:
+                output = checkpoint(tconv, output)
+            else:
+                output = tconv(output)
+            idx += 1
 
             # reflect pad on the right/botton if needed to handle odd input dimensions
             padding = [0, 0, 0, 0]
@@ -98,9 +134,15 @@ class Unet(nn.Module):
                 output = F.pad(output, padding, "reflect")
 
             output = torch.cat([output, downsample_layer], dim=1)
-            output = conv(output)
-        
+
+            if idx in ckpt_indices:
+                output = checkpoint(conv, output)
+            else:
+                output = conv(output)
+            idx += 1
+
         return output
+
 
 
 """
