@@ -5,7 +5,10 @@ python train.py \
   -n 'test_Varnet' \
   -t '/root/Data/train/' \
   -v '/root/Data/val/' \
-  --num_workers 4 \
+  --num_workers 6 \
+  --cascade 11 \
+  --chans 22 \
+  
   --grad-acc 2 \
   --aug_on \
   --aug_delay 1 \

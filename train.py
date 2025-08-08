@@ -2,7 +2,6 @@ import torch
 import argparse
 import os, sys
 from pathlib import Path
-from datetime import datetime # [반영] 버전 관리를 위해 datetime 임포트
 
 if os.getcwd() + '/utils/model/' not in sys.path:
     sys.path.insert(1, os.getcwd() + '/utils/model/')
@@ -19,7 +18,7 @@ def parse():
     # 기본 인자
     parser.add_argument('-g', '--GPU-NUM', type=int, default=0, help='GPU number to allocate')
     parser.add_argument('-b', '--batch-size', type=int, default=1, help='Batch size')
-    parser.add_argument('-e', '--num-epochs', type=int, default=50, help='Number of epochs')
+    parser.add_argument('-e', '--num-epochs', type=int, default=1, help='Number of epochs')
     parser.add_argument('-l', '--lr', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('-r', '--report-interval', type=int, default=500, help='Report interval')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network')
@@ -53,24 +52,26 @@ def parse():
     return args
 
 if __name__ == '__main__':
-    torch.cuda.empty_cache()
     args = parse()
     
     if args.seed is not None:
         seed_fix(args.seed)
 
-    # [반영] 타임스탬프 기반 버전 관리 기능
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = Path('../result') / args.net_name / timestamp
+    run_dir = Path('../result') / args.net_name
     
     # args 객체에 동적으로 최종 경로 할당
     args.exp_dir = run_dir / 'checkpoints'
     args.val_dir = run_dir / 'reconstructions_val'
     args.val_loss_dir = run_dir
 
-    # [반영] 폴더 생성 및 args.txt 저장은 train_part.py로 이동했으므로 여기서는 삭제
-    # args.exp_dir.mkdir(...)
-    # args.val_dir.mkdir(...)
-    # with open(...)
+    args.exp_dir.mkdir(parents=True, exist_ok=True)
+    args.val_dir.mkdir(parents=True, exist_ok=True)
+    
+    with open(args.val_loss_dir / 'args.txt', 'w') as f:
+        for k, v in sorted(vars(args).items()):
+            if isinstance(v, Path):
+                f.write(f'{k}: {str(v)}\n')
+            else:
+                f.write(f'{k}: {v}\n')
 
     train(args)

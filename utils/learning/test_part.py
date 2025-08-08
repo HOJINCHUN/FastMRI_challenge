@@ -5,7 +5,7 @@ from collections import defaultdict
 from utils.common.utils import save_reconstructions
 from utils.data.load_data import create_data_loaders
 from utils.model.varnet import VarNet
-from utils.model.fastmri.data.subsample import create_mask_func_for_maskk_type
+from utils.model.fastmri.data.subsample import create_mask_func_for_mask_type
 
 def test(args, model, data_loader):
     model.eval()

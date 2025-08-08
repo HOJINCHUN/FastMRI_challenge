@@ -99,19 +99,13 @@ class Unet(nn.Module):
         
         # down-sample
         for layer in self.down_sample_layers:
-            if idx in ckpt_indices:
-                output = checkpoint(layer, output)
-            else:
-                output = layer(output)
+            output = layer(output)
             stack.append(output)
             output = F.avg_pool2d(output, 2)
             idx += 1
 
-        
-        if idx in ckpt_indices:
-            output = checkpoint(self.conv, output)
-        else:
-            output = self.conv(output)
+
+        output = self.conv(output)
         idx += 1
 
         # up-sample

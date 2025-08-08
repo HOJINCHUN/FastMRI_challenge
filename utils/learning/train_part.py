@@ -23,7 +23,8 @@ import os
 
 from torch.cuda.amp import autocast, GradScaler
 
-def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):   
+def train_epoch(args, epoch, model, data_loader, optimizer, loss_type): 
+    scaler = GradScaler()
     model.train() 
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
@@ -39,16 +40,18 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):
         target         = target.cuda(non_blocking=True)
         maximum        = maximum.cuda(non_blocking=True)
 
-        output = model(masked_kspace, mask)
-        loss = loss_type(output, target, maximum)
+        with autocast(): 
+            output = model(masked_kspace, mask)
+            loss = loss_type(output, target, maximum)
         
         loss = loss / accumulation_steps    
-        loss.backward()
-        total_loss_val += loss.item()
+        scaler.scale(loss).backward()
+        total_loss += loss.item()
 
         # gradient accumulation
         if (iter + 1) % accumulation_steps == 0:
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
             optimizer.zero_grad()
             
 
@@ -64,10 +67,11 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):
 
     # 마지막 남은 gradient 처리
     if len_loader % accumulation_steps != 0:
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
         optimizer.zero_grad()
-
-    avg_loss = total_loss_val / len_loader
+        
+    avg_loss = total_loss / len_loader
     return avg_loss, time.perf_counter() - start_epoch
 
 
@@ -81,7 +85,7 @@ def validate(args, model, data_loader):
     with torch.no_grad():
         for iter, data in enumerate(data_loader):
             masked_kspace, mask, target, _fname, _slice_num, maximum, _crop_size = data
-            masked_kspace = kspace.cuda(non_blocking=True)
+            masked_kspace = masked_kspace.cuda(non_blocking=True)
             mask = mask.cuda(non_blocking=True)
             output = model(masked_kspace, mask)
 
@@ -170,20 +174,9 @@ def train(args):
     
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
+        print(f"[Epoch {epoch}] LR(s): {scheduler.get_last_lr()}")
         epoch_holder['cur'] = epoch
         
-        # [반영] 첫 에포크 후 폴더 생성 로직
-        if not is_dir_created:
-            print(f"First epoch successful. Creating result directory at: {args.val_loss_dir}")
-            args.exp_dir.mkdir(parents=True, exist_ok=True)
-            args.val_dir.mkdir(parents=True, exist_ok=True)
-            with open(args.val_loss_dir / 'args.txt', 'w') as f:
-                for k, v in sorted(vars(args).items()):
-                    if isinstance(v, Path):
-                        f.write(f'{k}: {str(v)}\n')
-                    else:
-                        f.write(f'{k}: {v}\n')
-            is_dir_created = True
         #train maskfunction 위치 수정.
         train_loader.dataset.transform.mask_func=BimodalGaussianMaskFunc(
             center_fractions=[0.08, 0.04],

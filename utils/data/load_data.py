@@ -93,7 +93,7 @@ def create_data_loaders(data_path, args, augmentor = None, mask_func: Optional[M
     
     data_storage = SliceData(
         root=data_path,
-        transform=VarNetDataTransform(istrain, augmentor, mask_func,use_seed),
+        transform=VarNetDataTransform(istrain, augmentor, mask_func, use_seed),
         input_key=args.input_key,
         target_key=target_key_,
         forward = isforward
