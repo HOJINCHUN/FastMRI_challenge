@@ -22,8 +22,7 @@ def parse():
     parser.add_argument('-l', '--lr', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('-r', '--report-interval', type=int, default=500, help='Report interval')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network')
-    parser.add_argument('-t', '--data-path-train', type=Path, default='/Data/train/', help='Directory of train data')
-    parser.add_argument('-v', '--data-path-val', type=Path, default='/Data/val/', help='Directory of validation data')
+    parser.add_argument('-p', '--data-path', type=Path, default='/root/Data/trainval/', help='Directory of train&val data')
 
     # 모델 하이퍼파라미터
     parser.add_argument('--cascade', type=int, default=8, help='Number of cascades')
@@ -32,7 +31,7 @@ def parse():
     parser.add_argument('--mask-type', type=str,default='random')
     parser.add_argument('--center-fractions', type=float, default='0.04')
     parser.add_argument('--accelerations',type=int,default=8)
-    
+    parser.add_argument('--fold-for-val',type=int,default=1,help='the index of fold that we will use for validation set')
     #필요해서 추가
     parser.add_argument('--num_workers', type=int, default=1, help='CPU num workers for parallelization')
     parser.add_argument('--input-key', type=str, default='kspace', help='Name of input key')
@@ -46,6 +45,8 @@ def parse():
     # 기타 설정
     parser.add_argument('--seed', type=int, default=430, help='Fix random seed')
     parser.add_argument('--grad-acc', type=int, default=1, help='steps for gradient accumulation')
+    parser.add_argument('--set_for_val', type=int,default=1,help='index of fold to set for validation set, you can choose only one')
+    parser.add_argument('--index_csv', type=str, default='/root/Data/trainval/index_kfold.csv', help='location of index.csv file')
     parser = DataAugmentor.add_augmentation_specific_args(parser)
     
     args = parser.parse_args()

@@ -165,8 +165,8 @@ def train(args):
         acc = [acc]
     mask = create_mask_for_mask_type(args.mask_type, cf,acc)
     
-    train_loader = create_data_loaders(args.data_path_train, args, augmentor, mask_train, shuffle = True)
-    val_loader = create_data_loaders(args.data_path_val, args, augmentor, mask)
+    train_loader = create_data_loaders(args.data_path, args, augmentor, mask_train, shuffle = True, use_split="train")
+    val_loader = create_data_loaders(args.data_path, args, augmentor, mask, use_split="val")
     
     val_loss_log = np.empty((0, 2))
     train_loss_log = np.empty((0,2))

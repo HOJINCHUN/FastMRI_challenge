@@ -116,7 +116,6 @@ class VarNetDataTransform:
                     kspace, vmask_func, seed, padding
                 )  
 
-            )
         else:
             masked_kspace = kspace
             shape = np.array(kspace.shape)
