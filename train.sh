@@ -5,10 +5,11 @@ python train.py \
   -n 'test_Varnet' \
   --num_workers 6 \
   --cascade 11 \
-  --chans 22 \
+  --chans 24 \
   --grad-acc 2 \
   --aug_on \
   --aug_delay 1 \
   --aug_strength 0.55 \
+  --set_for_val 1 \
   
   

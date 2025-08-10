@@ -164,13 +164,13 @@ def create_data_loaders(data_path, args, augmentor = None, mask_func: Optional[M
         forward = isforward, 
         allowed_bases=allowed_bases,
     )
-
+    
     data_loader = DataLoader(
         dataset=data_storage,
         batch_size=args.batch_size,
         shuffle=shuffle,
         num_workers = args.num_workers, 
-        pin_memory=True,
+        pin_memory=istrain,
         persistent_workers=True,
         prefetch_factor=4,
         worker_init_fn=lambda worker_id: seed_worker(args, worker_id)

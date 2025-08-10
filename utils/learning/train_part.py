@@ -42,7 +42,8 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):
 
         with autocast(): 
             output = model(masked_kspace, mask)
-            loss = loss_type(output, target, maximum)
+        with autocast(enabled=False):
+            loss = loss_type(output.float(), target.float(), maximum.float())
         
         loss = loss / accumulation_steps    
         scaler.scale(loss).backward()
@@ -84,7 +85,7 @@ def validate(args, model, data_loader):
 
     with torch.no_grad():
         for iter, data in enumerate(data_loader):
-            masked_kspace, mask, target, _fname, _slice_num, maximum, _crop_size = data
+            masked_kspace, mask, target, fnames, slices, maximum, _crop_size = data
             masked_kspace = masked_kspace.cuda(non_blocking=True)
             mask = mask.cuda(non_blocking=True)
             output = model(masked_kspace, mask)
