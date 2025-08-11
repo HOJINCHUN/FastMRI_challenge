@@ -23,8 +23,7 @@ import os
 
 from torch.cuda.amp import autocast, GradScaler
 
-def train_epoch(args, epoch, model, data_loader, optimizer, loss_type): 
-    scaler = GradScaler()
+def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, scaler): 
     model.train() 
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
@@ -149,7 +148,7 @@ def train(args):
         lr=args.lr, 
         weight_decay=args.weight_decay, eps=1e-06
     )
-    warmup_scheduler = LinearLR(optimizer, start_factor=1e-10, end_factor=1.0, total_iters=args.warmup_epochs)
+    warmup_scheduler = LinearLR(optimizer, start_factor=1e-3, end_factor=1.0, total_iters=args.warmup_epochs)
     main_scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs - args.warmup_epochs, eta_min=1e-7)
     scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, main_scheduler], milestones=[args.warmup_epochs])
 
@@ -165,7 +164,8 @@ def train(args):
     if not isinstance(acc, (list, tuple)):
         acc = [acc]
     mask = create_mask_for_mask_type(args.mask_type, cf,acc)
-    
+
+    scaler = GradScaler()
     train_loader = create_data_loaders(args.data_path, args, augmentor, mask_train, shuffle = True, use_split="train")
     val_loader = create_data_loaders(args.data_path, args, augmentor, mask, use_split="val")
     
@@ -175,7 +175,6 @@ def train(args):
     
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
-        print(f"[Epoch {epoch}] LR(s): {scheduler.get_last_lr()}")
         epoch_holder['cur'] = epoch
         
         #train maskfunction 위치 수정.
@@ -187,8 +186,7 @@ def train(args):
             mean2=8.0, stddev2=1.5,
             mix_weight1=0.4
         )
-        
-        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type)
+        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type, scaler=scaler)
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
         
         val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
@@ -209,9 +207,16 @@ def train(args):
         best_val_loss = min(best_val_loss, val_loss)
 
         save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss, is_new_best)
+        
+        # [반영] 스케줄러 업데이트 및 로그 출력
+        scheduler.step()
+        current_lr = optimizer.param_groups[0]['lr']
+
         print(
-            f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
-            f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
+            f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] '
+            f'TrainLoss = {train_loss:.4g} ValLoss = {val_loss:.4g} '
+            f'CurrentLR = {current_lr:.4e} '
+            f'TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s'
         )
         print(f"Max memory: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB")
 
