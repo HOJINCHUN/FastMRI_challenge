@@ -133,7 +133,7 @@ def train(args):
     print('Current cuda device: ', torch.cuda.current_device())
 
     #1. 마지막 model.pt checkpoint로 불러오기
-    ckpt_path = args.result_dir / 'checkpoints/model.pt'
+    ckpt_path = args.exp_dir / 'model.pt'
     checkpoint = torch.load(ckpt_path, map_location=device)
     
     model = VarNet(num_cascades=args.cascade, 
@@ -188,9 +188,9 @@ def train(args):
 
  
     # 기존 로그 정보가 만약 있다면 가져기기
-    os.makedirs(args.result_dir, exist_ok=True)
-    v_file_path = os.path.join(args.result_dir, "val_loss_log.npy")
-    t_file_path = os.path.join(args.result_dir, "train_loss_log.npy")
+    os.makedirs(args.run_dir, exist_ok=True)
+    v_file_path = os.path.join(args.run_dir, "val_loss_log.npy")
+    t_file_path = os.path.join(args.run_dir, "train_loss_log.npy")
 
     if os.path.exists(v_file_path):
         val_loss_log = np.load(v_file_path)

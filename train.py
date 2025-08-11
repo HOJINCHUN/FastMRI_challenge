@@ -31,7 +31,6 @@ def parse():
     parser.add_argument('--mask-type', type=str,default='random')
     parser.add_argument('--center-fractions', type=float, default='0.04')
     parser.add_argument('--accelerations',type=int,default=8)
-    parser.add_argument('--fold-for-val',type=int,default=1,help='the index of fold that we will use for validation set')
     #필요해서 추가
     parser.add_argument('--num_workers', type=int, default=1, help='CPU num workers for parallelization')
     parser.add_argument('--input-key', type=str, default='kspace', help='Name of input key')

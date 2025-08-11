@@ -47,7 +47,6 @@ def parse():
     parser.add_argument('--grad-acc', type=int, default=1, help='steps for gradient accumulation')
     parser.add_argument('--set_for_val', type=int,default=1,help='index of fold to set for validation set, you can choose only one')
     parser.add_argument('--index_csv', type=str, default='/root/Data/trainval/index_kfold.csv', help='location of index.csv file')
-    parser.add_argument('--result_dir',type=Path, defalt='root/result/test_Varnet', help='directory for existing checkpoint')
     parser = DataAugmentor.add_augmentation_specific_args(parser)
     
     args = parser.parse_args()

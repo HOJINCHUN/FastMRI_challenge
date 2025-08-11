@@ -21,6 +21,14 @@ def parse():
     parser.add_argument('--sens_chans', type=int, default=4, help='Number of channels for sensitivity map U-Net')
     parser.add_argument("--input_key", type=str, default='kspace', help='Name of input key')
 
+    #0811 추가된 변수
+    parser.add_argument('--mask-type', type=str,default='random')
+    parser.add_argument('--center-fractions', type=float, default='0.04')
+    parser.add_argument('--accelerations',type=int,default=8)
+    parser.add_argument('--fold-for-val',type=int,default=1,help='the index of fold that we will use for validation set')
+    parser.add_argument('--num_workers', type=int, default=1, help='CPU num workers for parallelization')
+    parser.add_argument('--index_csv', type=str, default='/root/Data/trainval/index_kfold.csv', help='location of index.csv file')
+
     args = parser.parse_args()
     return args
 
