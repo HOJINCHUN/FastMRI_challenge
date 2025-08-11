@@ -106,8 +106,9 @@ def validate(args, model, data_loader):
     torch.cuda.empty_cache()
     return metric_loss, num_subjects, reconstructions, targets, None, time.perf_counter() - start
 
-#scheduler 및 scaler 정보도 같이 저장.
-def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_best, scheduler=None, scaler=None):
+
+def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_best,
+               scheduler=None, scaler=None):
     payload = {
         'epoch': epoch,
         'args': args,
@@ -122,7 +123,6 @@ def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_bes
         payload['scaler'] = scaler.state_dict()
 
     torch.save(payload, f=exp_dir / 'model.pt')
-
     if is_new_best:
         shutil.copyfile(exp_dir / 'model.pt', exp_dir / 'best_model.pt')
 
@@ -132,10 +132,16 @@ def train(args):
     torch.cuda.set_device(device)
     print('Current cuda device: ', torch.cuda.current_device())
 
+    #1. 마지막 model.pt checkpoint로 불러오기
+    ckpt_path = args.result_dir / 'checkpoints/model.pt'
+    checkpoint = torch.load(ckpt_path, map_location=device)
+    
     model = VarNet(num_cascades=args.cascade, 
                    chans=args.chans, 
                    sens_chans=args.sens_chans)
     model.to(device)
+    model.load_state_dict(checkpoint['model'])
+    
     
     # 2. [반영] Augmentor의 에포크 참조 방식 수정
     epoch_holder = {'cur': 0}
@@ -152,14 +158,22 @@ def train(args):
         lr=args.lr, 
         weight_decay=args.weight_decay, eps=1e-06
     )
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    
     warmup_scheduler = LinearLR(optimizer, start_factor=1e-3, end_factor=1.0, total_iters=args.warmup_epochs)
     main_scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs - args.warmup_epochs, eta_min=1e-7)
     scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, main_scheduler], milestones=[args.warmup_epochs])
 
-    best_val_loss = 1.
-    start_epoch = 0
+    start_epoch = checkpoint['epoch']
+    best_val_loss = checkpoint['best_val_loss']
 
-    #val mask의 경우도 acc에 따라 mask를 다르게 적용하려면 여기가 아닌 varnetdatatransform에 직접 구현해야함.
+    #scheduler 및 scaler 기존 값으로 교체
+    if 'scheduler' in checkpoint:
+        scheduler.load_state_dict(checkpoint['scheduler'])
+    if 'scaler' in checkpoint:
+        scaler.load_state_dict(checkpoint['scaler'])
+    
+    #6. val mask의 경우도 acc에 따라 mask를 다르게 적용하려면 여기가 아닌 varnetdatatransform에 직접 구현해야함.
     #여기는 기본 value
     cf = args.center_fractions
     acc = args.accelerations
@@ -168,18 +182,32 @@ def train(args):
     if not isinstance(acc, (list, tuple)):
         acc = [acc]
     mask = create_mask_for_mask_type(args.mask_type, cf,acc)
-
-    scaler = GradScaler()
+        
     train_loader = create_data_loaders(args.data_path, args, augmentor, mask_train, shuffle = True, use_split="train")
     val_loader = create_data_loaders(args.data_path, args, augmentor, mask, use_split="val")
-    
-    val_loss_log = np.empty((0, 2))
-    train_loss_log = np.empty((0,2))
 
-            
-    v_file_path = os.path.join(args.val_loss_dir, "val_loss_log")
-    t_file_path = os.path.join(args.val_loss_dir,"train_loss_log")
+ 
+    # 기존 로그 정보가 만약 있다면 가져기기
+    os.makedirs(args.result_dir, exist_ok=True)
+    v_file_path = os.path.join(args.result_dir, "val_loss_log.npy")
+    t_file_path = os.path.join(args.result_dir, "train_loss_log.npy")
+
+    if os.path.exists(v_file_path):
+        val_loss_log = np.load(v_file_path)
+        # 2열(epoch, loss) 보장
+        if val_loss_log.ndim == 1:
+            val_loss_log = val_loss_log.reshape(-1, 2)
+    else:
+        val_loss_log = np.empty((0, 2), dtype=np.float64)
     
+    if os.path.exists(t_file_path):
+        train_loss_log = np.load(t_file_path)
+        if train_loss_log.ndim == 1:
+            train_loss_log = train_loss_log.reshape(-1, 2)
+    else:
+        train_loss_log = np.empty((0, 2), dtype=np.float64)
+
+        
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
         epoch_holder['cur'] = epoch
@@ -198,11 +226,12 @@ def train(args):
         
         val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
         train_loss_log = np.append(train_loss_log, np.array([[epoch,train_loss]]),axis=0)
-        
+
         np.save(v_file_path, val_loss_log)
         np.save(t_file_path, train_loss_log)
         print(f"val loss file saved! {v_file_path}")
         print(f"train loss file saved! {t_file_path}")
+        
         train_loss = torch.tensor(train_loss).cuda(non_blocking=True)
         val_loss = torch.tensor(val_loss).cuda(non_blocking=True)
         num_subjects = torch.tensor(num_subjects).cuda(non_blocking=True)
@@ -212,8 +241,7 @@ def train(args):
         is_new_best = val_loss < best_val_loss
         best_val_loss = min(best_val_loss, val_loss)
 
-        #[수정] scaler 및 scheduler 정보도 저장
-        save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss, is_new_best, scheduler=scheduler, scaler=scaler)
+        save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss, is_new_best, scheduler, scaler)
         
         # [반영] 스케줄러 업데이트 및 로그 출력
         scheduler.step()

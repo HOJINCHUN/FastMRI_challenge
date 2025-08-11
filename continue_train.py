@@ -18,7 +18,7 @@ def parse():
     # 기본 인자
     parser.add_argument('-g', '--GPU-NUM', type=int, default=0, help='GPU number to allocate')
     parser.add_argument('-b', '--batch-size', type=int, default=1, help='Batch size')
-    parser.add_argument('-e', '--num-epochs', type=int, default=1, help='Number of total epochs for training')
+    parser.add_argument('-e', '--num-epochs', type=int, default=1, help='Number of epochs. continued epochs = numepoch - model.pt.epoch')
     parser.add_argument('-l', '--lr', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('-r', '--report-interval', type=int, default=500, help='Report interval')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network')
@@ -47,6 +47,7 @@ def parse():
     parser.add_argument('--grad-acc', type=int, default=1, help='steps for gradient accumulation')
     parser.add_argument('--set_for_val', type=int,default=1,help='index of fold to set for validation set, you can choose only one')
     parser.add_argument('--index_csv', type=str, default='/root/Data/trainval/index_kfold.csv', help='location of index.csv file')
+    parser.add_argument('--result_dir',type=Path, defalt='root/result/test_Varnet', help='directory for existing checkpoint')
     parser = DataAugmentor.add_augmentation_specific_args(parser)
     
     args = parser.parse_args()
