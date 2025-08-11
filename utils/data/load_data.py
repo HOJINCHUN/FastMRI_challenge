@@ -32,7 +32,8 @@ def _allowed_bases_from_csv(index_csv: str, use_split: str, val_folds_str: Optio
         sub = df[df["fold"].isin(val_folds)]
     else:
         sub = df[~df["fold"].isin(val_folds)]
-    bases = set(sub["base"].tolist())
+    bases = set(sub["base"].tolist())    
+
     if len(bases) == 0:
         raise RuntimeError(f"No samples selected for split={use_split} with val_folds={sorted(val_folds)}")
     return bases

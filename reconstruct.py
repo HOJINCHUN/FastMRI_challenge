@@ -27,7 +27,8 @@ def parse():
     parser.add_argument('--accelerations',type=int,default=8)
     parser.add_argument('--fold-for-val',type=int,default=1,help='the index of fold that we will use for validation set')
     parser.add_argument('--num_workers', type=int, default=1, help='CPU num workers for parallelization')
-    parser.add_argument('--index_csv', type=str, default='/root/Data/trainval/index_kfold.csv', help='location of index.csv file')
+    #중요! create-data-loaders에서 index_csv를 none으로 설정해야 test 데이터를 정상적으로 load
+    parser.add_argument('--index_csv', type=str, default=None, help='location of index.csv file')
 
     args = parser.parse_args()
     return args
