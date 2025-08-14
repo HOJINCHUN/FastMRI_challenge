@@ -7,14 +7,14 @@ from utils.data.load_data import create_data_loaders
 from utils.model.varnet import VarNet
 from utils.model.fastmri.data.subsample import create_mask_for_mask_type
 
-def test(args, model, data_loader):
+def test(args, model, data_loader, device):
     model.eval()
     reconstructions = defaultdict(dict)
     
     with torch.no_grad():
         for (masked_kspace, mask, _target, fnames, slices, _max_value, _crop_size,) in data_loader:
-            masked_kspace = masked_kspace.cuda(non_blocking=True)
-            mask = mask.cuda(non_blocking=True)
+            masked_kspace = masked_kspace.to(device, non_blocking=False)
+            mask = mask.to(device, non_blocking=False)
             output = model(masked_kspace, mask)
 
             for i in range(output.shape[0]):
@@ -28,9 +28,8 @@ def test(args, model, data_loader):
 
 
 def forward(args):
-    device = torch.device(f'cuda:{args.GPU_NUM}' if torch.cuda.is_available() else 'cpu')
-    torch.cuda.set_device(device)
-    print ('Current cuda device ', torch.cuda.current_device())
+    device = torch.device('cpu')
+    print ('running on cpu')
 
     model = VarNet(num_cascades=args.cascade, 
                    chans=args.chans, 
@@ -43,5 +42,5 @@ def forward(args):
     
     
     forward_loader = create_data_loaders(data_path = args.data_path, args = args, isforward = True)
-    reconstructions, inputs = test(args, model, forward_loader)
+    reconstructions, inputs = test(args, model, forward_loader, device)
     save_reconstructions(reconstructions, args.forward_dir, inputs=inputs)

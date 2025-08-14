@@ -178,6 +178,8 @@ class SensitivityModel(nn.Module):
     def forward(self, masked_kspace: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         # get low frequency line locations and mask them out
         squeezed_mask = mask[:, 0, 0, :, 0]
+        squeezed_mask = squeezed_mask.to(dtype=torch.float32)
+
         cent = squeezed_mask.shape[1] // 2
         # running argmin returns the first non-zero
         left = torch.argmin(squeezed_mask[:, :cent].flip(1), dim=1)

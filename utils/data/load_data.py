@@ -142,10 +142,8 @@ def create_data_loaders(data_path, args, augmentor = None, mask_func: Optional[M
     index_csv=args.index_csv
     
     if isforward == False:
-        max_key_ = args.max_key
         target_key_ = args.target_key     
     else:
-        max_key_ = -1
         target_key_ = -1
 
 

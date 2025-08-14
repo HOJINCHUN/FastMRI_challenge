@@ -15,7 +15,7 @@ def parse():
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-g', '--GPU_NUM', type=int, default=0, help='GPU number to allocate')
     parser.add_argument('-b', '--batch-size', type=int, default=1, help='Batch size')
-    parser.add_argument('-n', '--net_name', type=Path, default='test_varnet', help='Name of network')
+    parser.add_argument('-n', '--net_name', type=Path, default='test_Varnet', help='Name of network')
     parser.add_argument('-p', '--path_data', type=Path, default='/Data/leaderboard/', help='Directory of test data')
 
     parser.add_argument('--cascade', type=int, default=1, help='Number of cascades | Should be less than 12')
@@ -24,13 +24,11 @@ def parse():
     parser.add_argument("--input_key", type=str, default='kspace', help='Name of input key')
 
     #0811 추가된 변수
-    parser.add_argument('--mask-type', type=str,default='random')
-    parser.add_argument('--center-fractions', type=float, default='0.04')
-    parser.add_argument('--accelerations',type=int,default=8)
     parser.add_argument('--fold-for-val',type=int,default=1,help='the index of fold that we will use for validation set')
     parser.add_argument('--num_workers', type=int, default=1, help='CPU num workers for parallelization')
     #중요! create-data-loaders에서 index_csv를 none으로 설정해야 test 데이터를 정상적으로 load
     parser.add_argument('--index_csv', type=str, default=None, help='location of index.csv file')
+    parser.add_argument('--seed', type=int,default=430)
 
     args = parser.parse_args()
     return args

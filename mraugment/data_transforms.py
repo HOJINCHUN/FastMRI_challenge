@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 from fastmri.data.subsample import MaskFunc
-from fastmri.data.subsample import RandomMaskFunc
+from fastmri.data.subsample import EquispacedMaskFunc
 from fastmri.data.transforms import to_tensor, apply_mask
 
 
@@ -18,7 +18,7 @@ class VarNetDataTransform:
     Data Transformer for training VarNet models with added MRAugment data augmentation.
     """
 
-    def __init__(self, istrain: bool, augmentor = None, mask_func: Optional[MaskFunc] = None, use_seed: bool = True):
+    def __init__(self, isforward: bool, istrain: bool, augmentor = None, mask_func: Optional[MaskFunc] = None, use_seed: bool = True):
         """
         Args:
             augmentor: DataAugmentor object that encompasses the MRAugment pipeline and
@@ -67,65 +67,57 @@ class VarNetDataTransform:
                 max_value: Maximum image value.
                 crop_size: The size to crop the final image.
         """
-        # Make sure data types match
-        kspace = kspace.astype(np.complex64)
-        target = target.astype(np.float32)
-        
-        if target is not None:
-            target = to_tensor(target)
-            max_value = attrs["max"]
-        else:
-            target = torch.tensor(0)
-            max_value = 0.0
+        kspace = to_tensor(kspace.astype(np.complex64))  # (..., H, W) or (C,H,W)
 
-        kspace = to_tensor(kspace)
-        
-        # Apply augmentations if needed
-        if self.use_augment: 
-            if self.augmentor.schedule_p() > 0.0:                
-                kspace, target = self.augmentor(kspace, target.shape)
-                
-        # Add singleton channel dimension if singlecoil
-        if len(kspace.shape) == 3:
-            kspace.unsqueeze_(0)
-        assert len(kspace.shape) == 4
-                
+        # target 유무 안전 처리
+        has_target = isinstance(target, np.ndarray)
+        if has_target:
+            target = to_tensor(target.astype(np.float32))
+            max_value = float(attrs.get("max", 0.0)) if isinstance(attrs, dict) else 0.0
+        else:
+            target = -1
+            max_value = -1
+
+        # augment는 target 있을 때만
+        if self.use_augment and has_target and self.augmentor.schedule_p() > 0.0:
+            kspace, target = self.augmentor(kspace, target.shape)
+
+        # (C,H,W) → (1,C,H,W)
+        if kspace.dim() == 3:
+            kspace = kspace.unsqueeze(0)
+        assert kspace.dim() == 4  # [B?, C, H, W] per-sample로는 [C,H,W]
+
         seed = None if not self.use_seed else tuple(map(ord, fname))
-        padding=None
+        padding = None  # 필요시 attrs에서 padding_left/right 읽어 설정
 
-        crop_size = torch.tensor([target.shape[0], target.shape[1]])
-        
         if self.mask_func:
-            if self.istrain==True:
-                #apply mask를 하면 나오는 mask도 저절로 맞게 수정되어서 나옴;;
-                masked_kspace, mask = apply_mask(
-                    kspace, self.mask_func, seed, padding
-                )
-            else:  #여기서 mask_func acc별로 분기
+            # train/val/test 공통: apply_mask 사용
+            if self.istrain:
+                masked_kspace, mask_t = apply_mask(kspace, self.mask_func, seed, padding)
+            else:
+                # 예시: 파일명으로 acc 분기
                 fname_str = str(fname).lower()
-                if "acc4" in fname_str:
-                    cf, ac = [0.08], [4]
-                else:
-                    cf, ac = [0.04], [8]
-                vmask_func = EquispacedmMaskFunc(cf, ac)
-                
-                masked_kspace, mask = apply_mask(
-                    kspace, vmask_func, seed, padding
-                )  
-
+                cf, ac = ([0.08], [4]) if "acc4" in fname_str else ([0.04], [8])
+                vmask_func = EquispacedMaskFunc(cf, ac)
+                masked_kspace, mask_t = apply_mask(kspace, vmask_func, seed, padding)
+            # VarNet 호환을 위해 bool 권장
+            mask_t = (mask_t > 0.5)
         else:
-            masked_kspace = to_tensor(kspace * mask)
-            mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).byte()
+            # HDF5의 1D mask 사용
+            W = kspace.shape[-2]
+            mask_np = (np.asarray(mask) > 0.5).astype(np.float32).reshape(1, 1, W, 1)
+            mask_t = torch.from_numpy(mask_np).to(device=kspace.device)
+            masked_kspace = kspace * mask_t.to(kspace.dtype)
+            mask_t = mask_t.bool()
 
-        return (
-            masked_kspace,
-            mask.byte(),
-            target,
-            fname,
-            slice_num,
-            max_value,
-            crop_size,
-        )
+        # crop_size: target 없으면 kspace에서 대체
+        if has_target:
+            crop_size = torch.tensor([target.shape[-2], target.shape[-1]])
+        else:
+            crop_size = torch.tensor([kspace.shape[-3], kspace.shape[-2]])
+
+        return masked_kspace, mask_t, target, fname, slice_num, max_value, crop_size
+
     
     def seed_pipeline(self, seed):
         """

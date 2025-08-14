@@ -35,7 +35,7 @@ def parse():
     parser.add_argument('--num_workers', type=int, default=1, help='CPU num workers for parallelization')
     parser.add_argument('--input-key', type=str, default='kspace', help='Name of input key')
     parser.add_argument('--target-key', type=str, default='image_label', help='Name of target key')
-    parser.add_argument('--max-key', type=str, default='max', help='Name of max key in attributes')
+    #parser.add_argument('--max-key', type=str, default='max', help='Name of max key in attributes')
 
     # [반영] AdamW와 스케줄러를 위한 인자
     parser.add_argument('--weight-decay', type=float, default=1e-6, help='Weight decay for AdamW optimizer')
