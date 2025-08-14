@@ -91,16 +91,13 @@ class VarNetDataTransform:
         assert len(kspace.shape) == 4
                 
         seed = None if not self.use_seed else tuple(map(ord, fname))
-        if isinstance(attrs, dict) and "padding_left" in attrs and "padding_right" in attrs:
-            left  = attrs["padding_left"]
-            right = attrs["padding_right"]
-            padding = (left, right)
-        else: padding=None
+        padding=None
 
         crop_size = torch.tensor([target.shape[0], target.shape[1]])
         
         if self.mask_func:
             if self.istrain==True:
+                #apply mask를 하면 나오는 mask도 저절로 맞게 수정되어서 나옴;;
                 masked_kspace, mask = apply_mask(
                     kspace, self.mask_func, seed, padding
                 )
@@ -110,23 +107,16 @@ class VarNetDataTransform:
                     cf, ac = [0.08], [4]
                 else:
                     cf, ac = [0.04], [8]
-                vmask_func = RandomMaskFunc(cf, ac)
+                vmask_func = EquispacedmMaskFunc(cf, ac)
                 
                 masked_kspace, mask = apply_mask(
                     kspace, vmask_func, seed, padding
                 )  
 
         else:
-            masked_kspace = kspace
-            shape = np.array(kspace.shape)
-            num_cols = shape[-2]
-            shape[:-3] = 1
-            mask_shape = [1] * len(shape)
-            mask_shape[-2] = num_cols
-            mask = torch.from_numpy(mask.reshape(*mask_shape).astype(np.float32))
-            mask = mask.reshape(*mask_shape)
-            mask[:, :, :acq_start] = 0
-            mask[:, :, acq_end:] = 0
+            masked_kspace = to_tensor(kspace * mask)
+            mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).byte()
+
         return (
             masked_kspace,
             mask.byte(),

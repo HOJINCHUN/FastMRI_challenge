@@ -5,6 +5,9 @@ from typing import Sequence
 from scipy.stats import norm
 from fastmri.data.subsample import EquispacedMaskFunc
 
+#일반적으로 single coil의 경우 random
+#multicoil의 경우 equispace
+
 class BimodalGaussianMaskFunc:
     """
     두 개의 정규분포를 결합하여 만든 가중치로 가속도를 샘플링하는 클래스.
@@ -38,7 +41,7 @@ class BimodalGaussianMaskFunc:
             
         self.weights = (mix_weight1 * weights1) + ((1 - mix_weight1) * weights2)
         
-        self.rng = random.Random()
+        self.rng = random.Random(seed)
 
     def __call__(self, shape: Sequence[int], seed: int, **kwargs) -> torch.Tensor:
         """

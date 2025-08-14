@@ -28,7 +28,6 @@ def test(args, model, data_loader):
 
 
 def forward(args):
-
     device = torch.device(f'cuda:{args.GPU_NUM}' if torch.cuda.is_available() else 'cpu')
     torch.cuda.set_device(device)
     print ('Current cuda device ', torch.cuda.current_device())
@@ -51,6 +50,6 @@ def forward(args):
     
     mask = create_mask_for_mask_type(args.mask_type, cf,acc)
     
-    forward_loader = create_data_loaders(data_path = args.data_path, args = args, mask_func=mask, isforward = True)
+    forward_loader = create_data_loaders(data_path = args.data_path, args = args, isforward = True)
     reconstructions, inputs = test(args, model, forward_loader)
     save_reconstructions(reconstructions, args.forward_dir, inputs=inputs)

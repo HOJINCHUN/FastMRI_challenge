@@ -143,7 +143,14 @@ def train(args):
     augmentor = DataAugmentor(args, current_epoch_fn)
 
     # 3. epoch별로 mask_train 수행해야함
-    mask_train = None
+    mask_train = BimodalGaussianMaskFunc(
+            center_fractions=[0.08, 0.04],
+            min_accel=4,
+            max_accel=12,
+            mean1=4.0, stddev1=1.5,
+            mean2=8.0, stddev2=1.5,
+            mix_weight1=0.4
+        )
     
     # 4. [반영] PyTorch 네이티브 스케줄러 및 AdamW 옵티마이저 적용
     loss_type = SSIMLoss().to(device=device)
@@ -185,14 +192,6 @@ def train(args):
         epoch_holder['cur'] = epoch
         
         #train maskfunction 위치 수정.
-        train_loader.dataset.transform.mask_func=BimodalGaussianMaskFunc(
-            center_fractions=[0.08, 0.04],
-            min_accel=4,
-            max_accel=12,
-            mean1=4.0, stddev1=1.5,
-            mean2=8.0, stddev2=1.5,
-            mix_weight1=0.4
-        )
         train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type, scaler=scaler)
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
         

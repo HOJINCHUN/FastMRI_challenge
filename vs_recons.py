@@ -1,5 +1,3 @@
-#reconstruct.py는 ground truth와 비교는 X. 단순 모델에 따른 이미지 재건만 수행. 
-
 import argparse
 from pathlib import Path
 import os, sys
@@ -16,11 +14,11 @@ def parse():
     parser.add_argument('-g', '--GPU_NUM', type=int, default=0, help='GPU number to allocate')
     parser.add_argument('-b', '--batch-size', type=int, default=1, help='Batch size')
     parser.add_argument('-n', '--net_name', type=Path, default='test_varnet', help='Name of network')
-    parser.add_argument('-p', '--path_data', type=Path, default='/Data/leaderboard/', help='Directory of test data')
+    parser.add_argument('-p', '--path_data', type=Path, default='/root/Data/samples', help='Directory of test data')
 
-    parser.add_argument('--cascade', type=int, default=1, help='Number of cascades | Should be less than 12')
-    parser.add_argument('--chans', type=int, default=9, help='Number of channels for cascade U-Net')
-    parser.add_argument('--sens_chans', type=int, default=4, help='Number of channels for sensitivity map U-Net')
+    parser.add_argument('--cascade', type=int, default=11, help='Number of cascades | Should be less than 12')
+    parser.add_argument('--chans', type=int, default=24, help='Number of channels for cascade U-Net')
+    parser.add_argument('--sens_chans', type=int, default=8, help='Number of channels for sensitivity map U-Net')
     parser.add_argument("--input_key", type=str, default='kspace', help='Name of input key')
 
     #0811 추가된 변수
@@ -28,7 +26,7 @@ def parse():
     parser.add_argument('--center-fractions', type=float, default='0.04')
     parser.add_argument('--accelerations',type=int,default=8)
     parser.add_argument('--fold-for-val',type=int,default=1,help='the index of fold that we will use for validation set')
-    parser.add_argument('--num_workers', type=int, default=1, help='CPU num workers for parallelization')
+    parser.add_argument('--num_workers', type=int, default=6, help='CPU num workers for parallelization')
     #중요! create-data-loaders에서 index_csv를 none으로 설정해야 test 데이터를 정상적으로 load
     parser.add_argument('--index_csv', type=str, default=None, help='location of index.csv file')
 
@@ -43,18 +41,12 @@ if __name__ == '__main__':
     start_time = time.time()
     
     # acc4
-    args.data_path = args.path_data / "acc4"
-    args.forward_dir = '../result' / args.net_name / 'reconstructions_leaderboard' / "acc4"
+    args.data_path = args.path_data
+    args.forward_dir = '../result' / args.net_name / 'sample_results'
     print(args.forward_dir)
     forward(args)
-    
-    # acc8
-    args.data_path = args.path_data / "acc8"
-    args.forward_dir = '../result' / args.net_name / 'reconstructions_leaderboard' / "acc8"
-    print(args.forward_dir)
-    forward(args)
-    
+
     reconstructions_time = time.time() - start_time
     print(f'Total Reconstruction Time = {reconstructions_time:.2f}s')
 
-    print('Success!') if reconstructions_time < 3600 else print('Fail!')
+    print('Success!')
