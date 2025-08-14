@@ -1,3 +1,3 @@
 python leaderboard_eval.py \
-  -lp '/root/Data/samples' \
-  -yp '../result/test_Varnet/sample_results'
+  -lp '/root/Data/leaderboard' \
+  -yp '../result/test_Varnet/reconstructions_leaderboard'

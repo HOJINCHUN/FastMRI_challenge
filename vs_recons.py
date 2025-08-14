@@ -38,9 +38,14 @@ if __name__ == '__main__':
 
     start_time = time.time()
     
-    # acc4
-    args.data_path = args.path_data
-    args.forward_dir = '../result' / args.net_name / 'sample_results_acc8'
+    args.data_path = args.path_data / "acc4"
+    args.forward_dir = '../result' / args.net_name / 'sample_results' / "acc4"
+    print(args.forward_dir)
+    forward(args)
+    
+    # acc8
+    args.data_path = args.path_data / "acc8"
+    args.forward_dir = '../result' / args.net_name / 'sample_results' / "acc8"
     print(args.forward_dir)
     forward(args)
 

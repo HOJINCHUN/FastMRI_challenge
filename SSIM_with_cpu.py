@@ -45,25 +45,20 @@ class SSIM(SSIMLoss):
 
 def forward(args):
 
-    device = torch.device(f'cuda:{args.GPU_NUM}' if torch.cuda.is_available() else 'cpu')
-    torch.cuda.set_device(device)
+    device = torch.device('cpu')
+    print('running on cpu')
 
     leaderboard_data = glob.glob(os.path.join(args.leaderboard_data_path,'*.h5'))
-    if len(leaderboard_data) != 58:
-        raise  NotImplementedError('Leaderboard Data Size Should Be 58')
-    
     your_data = glob.glob(os.path.join(args.your_data_path,'*.h5'))
-    if len(your_data) != 58:
-        raise  NotImplementedError('Your Data Size Should Be 58')
     
     ssim_total = 0
     idx = 0
     ssim_calculator = SSIM().to(device=device)
     with torch.no_grad():
         for part in ['brain_test', 'knee_test']:
-            for i_subject in range(29):
-                l_fname = os.path.join(args.leaderboard_data_path, part + str(i_subject+1) + '.h5')
-                y_fname = os.path.join(args.your_data_path, part + str(i_subject+1) + '.h5')
+            #for i_subject in range(29):
+                l_fname = os.path.join(args.leaderboard_data_path, part + '1' + '.h5')
+                y_fname = os.path.join(args.your_data_path, part + '1' + '.h5')
                 with h5py.File(l_fname, "r") as hf:
                     num_slices = hf['image_label'].shape[0]
                 for i_slice in range(num_slices):
@@ -105,12 +100,12 @@ if __name__ == '__main__':
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
     parser.add_argument('-g', '--GPU_NUM', type=int, default=0)
-    parser.add_argument('-lp', '--path_leaderboard_data', type=Path, default='/Data/leaderboard/')
+    parser.add_argument('-lp', '--path_leaderboard_data', type=Path, default='/root/Data/samples')
     
     """
     Modify Path Below To Test Your Results
     """
-    parser.add_argument('-yp', '--path_your_data', type=Path, default='../result/test_Unet/reconstructions_leaderboard/')
+    parser.add_argument('-yp', '--path_your_data', type=Path, default='../result/test_Varnet/sample_results')
     parser.add_argument('-key', '--output_key', type=str, default='reconstruction')
     
     args = parser.parse_args()
