@@ -92,15 +92,7 @@ class VarNetDataTransform:
 
         if self.mask_func:
             # train/val/test 공통: apply_mask 사용
-            if self.istrain:
-                masked_kspace, mask_t = apply_mask(kspace, self.mask_func, seed, padding)
-            else:
-                # 예시: 파일명으로 acc 분기
-                fname_str = str(fname).lower()
-                cf, ac = ([0.08], [4]) if "acc4" in fname_str else ([0.04], [8])
-                vmask_func = EquispacedMaskFunc(cf, ac)
-                masked_kspace, mask_t = apply_mask(kspace, vmask_func, seed, padding)
-            # VarNet 호환을 위해 bool 권장
+            masked_kspace, mask_t = apply_mask(kspace, self.mask_func, seed, padding)
             mask_t = (mask_t > 0.5)
         else:
             # HDF5의 1D mask 사용

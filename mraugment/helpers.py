@@ -103,3 +103,34 @@ def complex_channel_last(x):
         assert len(x.shape) == 4
         x = x.permute(1, 2, 3, 0)
     return x
+
+# mraugment/schedulers.py
+import math
+
+def schedule_p(t, *, D, T, p_max, aug_schedule, aug_exp_decay):
+    """Return augmentation prob. (0..p_max) for epoch t."""
+    # 경계/예외 처리
+    if T <= D:
+        return float(p_max) if t >= D else 0.0
+
+    if t < D:
+        return 0.0
+
+    # 스케줄
+    if aug_schedule == 'constant':
+        p = p_max
+    elif aug_schedule == 'ramp':
+        p = (t - D) / (T - D) * p_max
+    elif aug_schedule == 'exp':
+        c = aug_exp_decay / (T - D)
+        denom = 1.0 - math.exp(-(T - D) * c)
+        # denom이 0에 가까울 때 안정화
+        if abs(denom) < 1e-12:
+            p = p_max
+        else:
+            p = p_max / denom * (1.0 - math.exp(-(t - D) * c))
+    else:
+        raise ValueError(f"Unknown aug_schedule: {aug_schedule}")
+
+    # 클램프 및 실수화
+    return float(max(0.0, min(p, p_max)))

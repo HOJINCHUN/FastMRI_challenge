@@ -8,6 +8,7 @@ from math import exp
 import torch
 import torchvision.transforms.functional as TF
 from mraugment.helpers import complex_crop_if_needed, crop_if_needed, complex_channel_first, complex_channel_last
+from mraugment.helpers import schedule_p as schedule_p_fn
 from fastmri.data import transforms as T
 from fastmri import fft2c, ifft2c, rss_complex, complex_abs
 
@@ -258,22 +259,15 @@ class DataAugmentor:
         return kspace, target
         
     def schedule_p(self):
-        D = self.args.aug_delay
-        T = self.args.num_epochs
-        t = self.current_epoch_fn()
-        p_max = self.args.aug_strength
-
-        if t < D:
-            return 0.0
-        else:
-            if self.args.aug_schedule == 'constant':
-                p = p_max
-            elif self.args.aug_schedule == 'ramp':
-                p = (t-D)/(T-D) * p_max
-            elif self.args.aug_schedule == 'exp':
-                c = self.args.aug_exp_decay/(T-D) # Decay coefficient
-                p = p_max/(1-exp(-(T-D)*c))*(1-exp(-(t-D)*c))
-            return p
+        return schedule_p_fn(
+            t=self.current_epoch_fn(),
+            D=self.args.aug_delay,
+            T=self.args.num_epochs,
+            p_max=self.args.aug_strength,
+            aug_schedule=self.args.aug_schedule,
+            aug_exp_decay=self.args.aug_exp_decay,
+        )
+        
 
         
     def add_augmentation_specific_args(parser):

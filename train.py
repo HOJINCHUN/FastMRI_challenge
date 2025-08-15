@@ -41,6 +41,10 @@ def parse():
     parser.add_argument('--weight-decay', type=float, default=1e-6, help='Weight decay for AdamW optimizer')
     parser.add_argument('--warmup-epochs', type=int, default=10, help='Number of epochs for learning rate warmup')
 
+    #L1 regularization 관련 인자
+    parser.add_argument('--ssim_weight', type=float, default=1)
+    parser.add_argument('--l1_weight', type=float, default=0.02)
+    parser.add_argument('--normalize', type=str,default='target_max',help='target_max | minmax | none')
     # 기타 설정
     parser.add_argument('--seed', type=int, default=430, help='Fix random seed')
     parser.add_argument('--grad-acc', type=int, default=1, help='steps for gradient accumulation')
