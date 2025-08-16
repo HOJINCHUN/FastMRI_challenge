@@ -33,7 +33,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, scaler):
     optimizer.zero_grad()
 
     for iter, data in enumerate(data_loader):
-        masked_kspace, mask, target, _fname, _slice_num, maximum, _crop_size = data
+        masked_kspace, mask, target, _fname, _slice_num, maximum = data
         masked_kspace = masked_kspace.cuda(non_blocking=True)
         mask           = mask.cuda(non_blocking=True)
         target         = target.cuda(non_blocking=True)

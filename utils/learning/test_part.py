@@ -12,7 +12,7 @@ def test(args, model, data_loader):
     reconstructions = defaultdict(dict)
     
     with torch.no_grad():
-        for (masked_kspace, mask, _target, fnames, slices, _max_value, _crop_size,) in data_loader:
+        for (masked_kspace, mask, _target, fnames, slices, _max_value) in data_loader:
             masked_kspace = masked_kspace.cuda(non_blocking=True)
             mask = mask.cuda(non_blocking=True)
             output = model(masked_kspace, mask)

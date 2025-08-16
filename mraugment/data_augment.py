@@ -273,7 +273,7 @@ class DataAugmentor:
     def add_augmentation_specific_args(parser):
         parser.add_argument(
             '--aug_on', 
-            default=False,
+            default=True,
             help='This switch turns data augmentation on.',
             action='store_true'
         )
@@ -289,13 +289,13 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_delay', 
             type=int, 
-            default=0,
+            default=1,
             help='Number of epochs at the beginning of training without data augmentation. The schedule in --aug_schedule will be adjusted so that at the last epoch the augmentation strength is --aug_strength.'
         )
         parser.add_argument(
             '--aug_strength', 
             type=float, 
-            default=0.0, 
+            default=0.55, 
             help='Augmentation strength, combined with --aug_schedule determines the augmentation strength in each epoch'
         )
         parser.add_argument(

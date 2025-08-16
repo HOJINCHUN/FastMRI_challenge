@@ -112,7 +112,7 @@ def schedule_p(t, *, D, T, p_max, aug_schedule, aug_exp_decay):
     # 경계/예외 처리
     if T <= D:
         return float(p_max) if t >= D else 0.0
-
+        
     if t < D:
         return 0.0
 

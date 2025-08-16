@@ -33,7 +33,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, scaler):
     optimizer.zero_grad()
 
     for iter, data in enumerate(data_loader):
-        masked_kspace, mask, target, _fname, _slice_num, maximum, _crop_size = data
+        masked_kspace, mask, target, _fname, _slice_num, maximum = data
         masked_kspace = masked_kspace.cuda(non_blocking=True)
         mask           = mask.cuda(non_blocking=True)
         target         = target.cuda(non_blocking=True)
@@ -75,7 +75,6 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, scaler):
     return avg_loss, time.perf_counter() - start_epoch
 
 
-
 def validate(args, model, data_loader):
     model.eval()
     reconstructions = defaultdict(dict)
@@ -93,6 +92,7 @@ def validate(args, model, data_loader):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
                 targets[fnames[i]][int(slices[i])] = target[i].numpy()
 
+    # 정렬 및 스택
     for fname in reconstructions:
         reconstructions[fname] = np.stack(
             [out for _, out in sorted(reconstructions[fname].items())]
@@ -101,10 +101,34 @@ def validate(args, model, data_loader):
         targets[fname] = np.stack(
             [out for _, out in sorted(targets[fname].items())]
         )
-    metric_loss = sum([ssim_loss(targets[fname], reconstructions[fname]) for fname in reconstructions])
+
+    # SSIM + L1 가중합
+    # 주의: ssim_loss가 "1-SSIM"을 반환한다고 가정. 
+    ssim_terms, l1_terms = [], []
+    metric_loss = 0.0
+    w_ssim = args.ssim_weight
+    w_l1   = args.l1_weight
+    l1_norm = args.normalize  # 'target_max' | 'minmax' | 'none'
+
+    for fname in reconstructions:
+        ssim_term = ssim_loss(targets[fname], reconstructions[fname])
+        l1_term = l1_loss_np(targets[fname], reconstructions[fname], normalize=l1_norm)
+
+        ssim_terms.append(ssim_term)
+        l1_terms.append(l1_term)
+
+        metric_loss += w_ssim * ssim_term + w_l1 * l1_term
+
     num_subjects = len(reconstructions)
+
+    # 평균값도 로그용으로 리턴하고 싶다면: (원형 함수 시그니처를 바꾸기 어렵다면 None 자리에 dict로 넣어도 됨)
+    metrics = {
+        'mean_ssim_loss': float(np.mean(ssim_terms)) if len(ssim_terms) else 0.0,
+        'mean_l1_loss': float(np.mean(l1_terms)) if len(l1_terms) else 0.0,
+    }
+
     torch.cuda.empty_cache()
-    return metric_loss, num_subjects, reconstructions, targets, None, time.perf_counter() - start
+    return metric_loss, num_subjects, reconstructions, targets, metrics, time.perf_counter() - start
 
 
 def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_best,
@@ -148,8 +172,16 @@ def train(args):
     current_epoch_fn = lambda: epoch_holder['cur']
     augmentor = DataAugmentor(args, current_epoch_fn)
 
-    # 3. epoch별로 mask_train 수행해야함
-    mask_train = None
+    #mask_train 정의 위치 수정
+    mask_train = BimodalGaussianMaskFunc(
+            center_fractions=[0.08, 0.04],
+            min_accel=4,
+            max_accel=12,
+            mean1=4.0, stddev1=1.5,
+            mean2=8.0, stddev2=1.5,
+            mix_weight1=0.4, 
+            current_epoch_fn=current_epoch_fn, args=args
+        )
     
     # 4. [반영] PyTorch 네이티브 스케줄러 및 AdamW 옵티마이저 적용
     loss_type = SSIMLoss().to(device=device)
@@ -160,10 +192,12 @@ def train(args):
     )
     optimizer.load_state_dict(checkpoint['optimizer'])
     
-    warmup_scheduler = LinearLR(optimizer, start_factor=1e-3, end_factor=1.0, total_iters=args.warmup_epochs)
+    warmup_scheduler = LinearLR(optimizer, start_factor=1e-2, end_factor=1.0, total_iters=args.warmup_epochs)
     main_scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs - args.warmup_epochs, eta_min=1e-7)
     scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, main_scheduler], milestones=[args.warmup_epochs])
 
+    scaler=GradScaler()
+    
     start_epoch = checkpoint['epoch']
     best_val_loss = checkpoint['best_val_loss']
 
@@ -172,19 +206,9 @@ def train(args):
         scheduler.load_state_dict(checkpoint['scheduler'])
     if 'scaler' in checkpoint:
         scaler.load_state_dict(checkpoint['scaler'])
-    
-    #6. val mask의 경우도 acc에 따라 mask를 다르게 적용하려면 여기가 아닌 varnetdatatransform에 직접 구현해야함.
-    #여기는 기본 value
-    cf = args.center_fractions
-    acc = args.accelerations
-    if not isinstance(cf, (list, tuple)):
-        cf = [cf]
-    if not isinstance(acc, (list, tuple)):
-        acc = [acc]
-    mask = create_mask_for_mask_type(args.mask_type, cf,acc)
         
     train_loader = create_data_loaders(args.data_path, args, augmentor, mask_train, shuffle = True, use_split="train")
-    val_loader = create_data_loaders(args.data_path, args, augmentor, mask, use_split="val")
+    val_loader = create_data_loaders(args.data_path, args, augmentor, use_split="val")
 
  
     # 기존 로그 정보가 만약 있다면 가져기기
@@ -211,16 +235,7 @@ def train(args):
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
         epoch_holder['cur'] = epoch
-        
-        #train maskfunction 위치 수정.
-        train_loader.dataset.transform.mask_func=BimodalGaussianMaskFunc(
-            center_fractions=[0.08, 0.04],
-            min_accel=4,
-            max_accel=12,
-            mean1=4.0, stddev1=1.5,
-            mean2=8.0, stddev2=1.5,
-            mix_weight1=0.4
-        )
+
         train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type, scaler=scaler)
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
         

@@ -56,12 +56,12 @@ class BimodalGaussianMaskFunc:
 
         t = int(self.current_epoch_fn()) if self.current_epoch_fn is not None else 0
         p = schedule_p(
-            self.args.aug_delay,
-            self.args.num_epochs,
             t,
-            self.args.aug_strength,
-            self.args.aug_schedule,
-            getattr(self.args, "aug_exp_decay", 1.0),
+            D=self.args.aug_delay,
+            T=self.args.num_epochs,
+            p_max=self.args.aug_strength,
+            aug_schedule=self.args.aug_schedule,
+            aug_exp_decay=self.args.aug_exp_decay
         )
 
         # 증강 사용 여부

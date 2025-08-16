@@ -4,12 +4,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # --- 경로 설정 ---
-recon_dir = "/root/result/test_Varnet/sample_results/acc8"       # 재구성 결과 폴더
+recon_dir = "/root/result/test_Varnet/reconstructions_leaderboard/acc8"       # 재구성 결과 폴더
 gt_dir    = "/root/Data/samples/acc8/image"                  # GT 폴더
 ds_name_1 = "reconstruction"                                     # 재구성 데이터셋 키
 ds_name_2 = "image_grappa"                                       # GT 데이터셋 키
 ds_name_3 = "image_label"                                        # Alias free 데이터셋 키
-out_dir   = recon_dir                                            # PNG 저장 폴더
+out_dir   = '/root/result/test_Varnet/sample_results/acc8'                                           # PNG 저장 폴더
 
 os.makedirs(out_dir, exist_ok=True)
 
@@ -21,7 +21,7 @@ def minmax_normalize(img: np.ndarray, eps: float = 1e-8) -> np.ndarray:
         return np.zeros_like(img, dtype=np.float32)
     return (img - vmin) / (vmax - vmin)
 
-def save_stack_to_pngs(stack: np.ndarray, out_dir: str, prefix: str, step: int = 5):
+def save_stack_to_pngs(stack: np.ndarray, out_dir: str, prefix: str, step: int = 7):
     """stack: (num_slices, H, W) -> 각 슬라이스를 PNG로 저장"""
     n = stack.shape[0]
     for i in range(0, n, step):
@@ -36,12 +36,6 @@ recon_files = sorted([f for f in os.listdir(recon_dir) if f.endswith(".h5")])
 
 for fname in recon_files:
     recon_path = os.path.join(recon_dir, fname)
-    gt_path    = os.path.join(gt_dir, fname)
-
-    if not os.path.exists(gt_path):
-        print(f"[WARNING] GT file not found for {fname}, skipping.")
-        continue
-
     print(f"\n[Processing] {fname}")
 
     # 재구성 결과
@@ -50,14 +44,6 @@ for fname in recon_files:
     print("[Reconstruction] shape:", recon.shape)
     save_stack_to_pngs(recon, out_dir, prefix=f"{fname}_recon")
 
-    # GT / alias free
-    with h5py.File(gt_path, "r") as f:
-        gt = np.array(f[ds_name_2])
-        af = np.array(f[ds_name_3])
-    print("[Alias free] shape:", af.shape)
-    save_stack_to_pngs(af, out_dir, prefix=f"{fname}_af")
-    print("[Ground Truth] shape:", gt.shape)
-    save_stack_to_pngs(gt, out_dir, prefix=f"{fname}_gt")
 
 print("\nDone! Saved PNGs to:", out_dir)
 
