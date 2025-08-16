@@ -41,7 +41,7 @@ def forward(args):
     print(checkpoint['epoch'], checkpoint['best_val_loss'].item())
     model.load_state_dict(checkpoint['model'])
     
-    
-    forward_loader = create_data_loaders(data_path = args.data_path, args = args, isforward = True)
+    mask = create_mask_func_for_mask_type('Equispaced',0.04,8)
+    forward_loader = create_data_loaders(data_path = args.data_path, args = args, mask, isforward = True)
     reconstructions, inputs = test(args, model, forward_loader)
     save_reconstructions(reconstructions, args.forward_dir, inputs=inputs)

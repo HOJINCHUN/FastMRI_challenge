@@ -10,7 +10,7 @@ import torch
 
 from fastmri.data.subsample import MaskFunc
 from fastmri.data.subsample import EquispacedMaskFunc
-from fastmri.data.transforms import to_tensor, apply_mask
+from fastmri.data.transforms import to_tensor, apply_mask, center_crop
 import torch.nn.functional as F
 
 def _center_pad_to(x: torch.Tensor, H: int, W: int) -> torch.Tensor:
@@ -25,7 +25,7 @@ class VarNetDataTransform:
     Data Transformer for training VarNet models with added MRAugment data augmentation.
     """
 
-    def __init__(self, augmentor = None, mask_func: Optional[MaskFunc] = None, use_seed: bool = True):
+    def __init__(self, istrain: bool, isforward: bool, data_path: str, augmentor = None, mask_func: Optional[MaskFunc] = None, use_seed: bool = True):
         """
         Args:
             augmentor: DataAugmentor object that encompasses the MRAugment pipeline and
@@ -38,6 +38,9 @@ class VarNetDataTransform:
         """
         self.mask_func = mask_func
         self.use_seed = use_seed
+        self.data_path = data_path
+        self.istrain = istrain
+        self.isforward = isforward
         
         if augmentor is not None:
             self.use_augment = True
@@ -72,6 +75,9 @@ class VarNetDataTransform:
                 slice_num: The slice index.
                 max_value: Maximum image value.
         """
+        kspace = kspace.astype(np.complex64)
+        target = target.astype(np.float32)
+        
         kspace = to_tensor(kspace.astype(np.complex64))  # (..., H, W) or (C,H,W)
 
         # target 유무 안전 처리
@@ -80,17 +86,16 @@ class VarNetDataTransform:
             target = to_tensor(target)
             max_value = float(attrs.get("max", 0.0)) if isinstance(attrs, dict) else 0.0
         else:
-            target = -1
-            max_value = -1
+            target = torch.tensor(0)
+            max_value = 0.0
 
         # augment는 target 있을 때만
         if self.use_augment and has_target and self.augmentor.schedule_p() > 0.0:
             kspace, target = self.augmentor(kspace, target.shape)
-
-        # (C,H,W) → (1,C,H,W)
-        if kspace.dim() == 3:
-            kspace = kspace.unsqueeze(0)
-        assert kspace.dim() == 4  # [B?, C, H, W] per-sample로는 [C,H,W]
+        """
+        if len(kspace.shape) == 3:
+            kspace.unsqueeze_(0)
+        assert len(kspace.shape) == 4"""
 
         if isinstance(target, torch.Tensor):
             # target이 [H,W] 또는 [C,H,W]라고 가정
@@ -116,18 +121,36 @@ class VarNetDataTransform:
         
         seed = None if not self.use_seed else tuple(map(ord, fname))
         padding = None  # 필요시 attrs에서 padding_left/right 읽어 설정
+        
+        if self.istrain:
+            masked_kspace, mask = apply_mask(kspace, self.mask_func, seed, padding)
+            
+        elif self.isforward: #reconstruct
+            if "acc4" in str(data_path):
+               cf, ac = [0.08], [4]
+            else:
+                cf, ac = [0.04], [8]
+            vmask_func = EquispacedMaskFunc(cf, ac)
 
-        if self.mask_func:
-            # train/val/test 공통: apply_mask 사용
-            masked_kspace, mask_t = apply_mask(kspace, self.mask_func, seed, padding)
-        else:
-            # HDF5의 1D mask 사용
-            W = kspace.shape[-2]
-            mask_np = np.asarray(mask).astype(np.float32).reshape(1, 1, W, 1)
-            mask_t = torch.from_numpy(mask_np).to(device=kspace.device)
-            masked_kspace = kspace * mask_t.to(kspace.dtype)
+            masked_kspace, mask = apply_mask(
+                kspace, vmask_func, seed, padding
+            )  
+        
+        else: 
+            fname_str = str(fname).lower()
+            if "acc4" in fname_str:
+                cf, ac = [0.08], [4]
+            else:
+                cf, ac = [0.04], [8]
+            vmask_func = EquispacedMaskFunc(cf, ac)
 
-        return masked_kspace, mask_t, target, fname, slice_num, max_value
+            masked_kspace, mask = apply_mask(
+                kspace, vmask_func, seed, padding
+            ) 
+            
+            
+
+        return masked_kspace, mask, target, fname, slice_num, max_value
 
     
     def seed_pipeline(self, seed):

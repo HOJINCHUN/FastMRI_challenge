@@ -101,7 +101,7 @@ def validate(args, model, data_loader):
 
     with torch.no_grad():
         for iter, data in enumerate(data_loader):
-            masked_kspace, mask, target, fnames, slices, maximum, _crop_size = data
+            masked_kspace, mask, target, fnames, slices, maximum = data
             masked_kspace = masked_kspace.cuda(non_blocking=True)
             mask = mask.cuda(non_blocking=True)
             output = model(masked_kspace, mask)
@@ -193,7 +193,7 @@ def train(args):
             mean1=4.0, stddev1=1.5,
             mean2=8.0, stddev2=1.5,
             mix_weight1=0.4, 
-            current_epoch_fn, args
+            current_epoch_fn=current_epoch_fn, args=args
         )
     
     # 4. [반영] PyTorch 네이티브 스케줄러 및 AdamW 옵티마이저 적용
@@ -211,8 +211,10 @@ def train(args):
     start_epoch = 0
 
     scaler = GradScaler()
+
+    mask = create_mask_for_mask_type('equispaced',[0.04],[8])
     train_loader = create_data_loaders(args.data_path, args, augmentor, mask_train, shuffle = True, use_split="train")
-    val_loader = create_data_loaders(args.data_path, args, augmentor, use_split="val")
+    val_loader = create_data_loaders(args.data_path, args, augmentor, mask, use_split="val")
     
     val_loss_log = np.empty((0, 2))
     train_loss_log = np.empty((0,2))

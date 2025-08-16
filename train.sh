@@ -6,7 +6,6 @@ python train.py \
   --num_workers 6 \
   --cascade 11 \
   --chans 24 \
-  --mask-type 'equispaced' \
   --grad-acc 2 \
   --aug_on \
   --aug_delay 1 \
