@@ -139,14 +139,8 @@ def validate(args, model, data_loader):
 
     num_subjects = len(reconstructions)
 
-    # 평균값도 로그용으로 리턴하고 싶다면: (원형 함수 시그니처를 바꾸기 어렵다면 None 자리에 dict로 넣어도 됨)
-    metrics = {
-        'mean_ssim_loss': float(np.mean(ssim_terms)) if len(ssim_terms) else 0.0,
-        'mean_l1_loss': float(np.mean(l1_terms)) if len(l1_terms) else 0.0,
-    }
-
     torch.cuda.empty_cache()
-    return metric_loss, num_subjects, reconstructions, targets, metrics, time.perf_counter() - start
+    return metric_loss, num_subjects, reconstructions, targets, None, time.perf_counter() - start
 
 
 #scheduler 및 scaler 정보도 같이 저장.

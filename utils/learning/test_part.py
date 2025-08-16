@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-
+from pathlib import Path
 from collections import defaultdict
 from utils.common.utils import save_reconstructions
 from utils.data.load_data import create_data_loaders
@@ -36,7 +36,10 @@ def forward(args):
                    chans=args.chans, 
                    sens_chans=args.sens_chans)
     model.to(device=device)
-    
+    p = Path(args.exp_dir)/'best_model.pt'
+    with open(p, 'rb') as f:
+        head = f.read(8)
+    print("first 8 bytes:", head)
     checkpoint = torch.load(args.exp_dir / 'best_model.pt', map_location='cpu', weights_only=False)
     print(checkpoint['epoch'], checkpoint['best_val_loss'].item())
     model.load_state_dict(checkpoint['model'])
