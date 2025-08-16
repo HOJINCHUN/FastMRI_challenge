@@ -23,37 +23,39 @@ import os
 
 from torch.cuda.amp import autocast, GradScaler
 
-def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, scaler): 
-    model.train() 
+import time
+import torch
+
+def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, scaler):
+    model.train()
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
-    total_loss = 0.
+    total_loss = 0.0
 
     accumulation_steps = args.grad_acc
-    optimizer.zero_grad()
+    optimizer.zero_grad(set_to_none=True)
 
     for iter, data in enumerate(data_loader):
         masked_kspace, mask, target, _fname, _slice_num, maximum = data
-        masked_kspace = masked_kspace.cuda(non_blocking=True)
-        mask           = mask.cuda(non_blocking=True)
-        target         = target.cuda(non_blocking=True)
-        maximum        = maximum.cuda(non_blocking=True)
+        masked_kspace = masked_kspace.cuda(non_blocking=True).float()
+        mask          = mask.cuda(non_blocking=True).float()
+        target        = target.cuda(non_blocking=True).float()
+        maximum       = maximum.cuda(non_blocking=True).float()
 
-        with autocast(): 
-            output = model(masked_kspace, mask)
-        with autocast(enabled=False):
-            loss = loss_type(output.float(), target.float(), maximum.float())
-        
-        loss = loss / accumulation_steps    
-        scaler.scale(loss).backward()
+        # forward (no autocast)
+        output = model(masked_kspace, mask)
+
+        # loss (no scaler)
+        loss = loss_type(output, target, maximum)
+
+        # grad accumulation
+        loss = loss / accumulation_steps
+        loss.backward()
         total_loss += loss.item()
 
-        # gradient accumulation
         if (iter + 1) % accumulation_steps == 0:
-            scaler.step(optimizer)
-            scaler.update()
-            optimizer.zero_grad()
-            
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
 
         if iter % args.report_interval == 0:
             curr_loss = loss.item() * accumulation_steps
@@ -65,16 +67,14 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, scaler):
             )
             start_iter = time.perf_counter()
 
-    # 마지막 남은 gradient 처리
+    # 마지막 남은 그래디언트 처리
     if len_loader % accumulation_steps != 0:
-        scaler.step(optimizer)
-        scaler.update()
-        optimizer.zero_grad()
-        
+        optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+
     avg_loss = total_loss / len_loader
     return avg_loss, time.perf_counter() - start_epoch
-
-
+    
 
 def l1_loss_np(gt_vol, pred_vol, normalize='target_max', eps=1e-6):
     gt = gt_vol.astype(np.float32)
