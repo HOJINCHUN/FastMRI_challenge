@@ -25,7 +25,7 @@ class VarNetDataTransform:
     Data Transformer for training VarNet models with added MRAugment data augmentation.
     """
 
-    def __init__(self, istrain: bool, isforward: bool, data_path: str, augmentor = None, mask_func: Optional[MaskFunc] = None, use_seed: bool = True):
+    def __init__(self, istrain: bool, isforward: bool, data_path: str, seed: int, augmentor = None, mask_func: Optional[MaskFunc] = None):
         """
         Args:
             augmentor: DataAugmentor object that encompasses the MRAugment pipeline and
@@ -37,7 +37,7 @@ class VarNetDataTransform:
                 mask is used for all the slices of a given volume every time.
         """
         self.mask_func = mask_func
-        self.use_seed = use_seed
+        self.seed = seed
         self.data_path = data_path
         self.istrain = istrain
         self.isforward = isforward
@@ -95,7 +95,7 @@ class VarNetDataTransform:
             kspace.unsqueeze_(0)
         assert len(kspace.shape) == 4"""
         
-        seed = None if not self.use_seed else tuple(map(ord, fname))
+        seed = self.seed
         padding = None  # 필요시 attrs에서 padding_left/right 읽어 설정
         
         if self.istrain:
