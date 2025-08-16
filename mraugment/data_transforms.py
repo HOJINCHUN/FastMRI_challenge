@@ -75,8 +75,6 @@ class VarNetDataTransform:
                 slice_num: The slice index.
                 max_value: Maximum image value.
         """
-        kspace = kspace.astype(np.complex64)
-        target = target.astype(np.float32)
         
         kspace = to_tensor(kspace.astype(np.complex64))  # (..., H, W) or (C,H,W)
 
@@ -96,28 +94,6 @@ class VarNetDataTransform:
         if len(kspace.shape) == 3:
             kspace.unsqueeze_(0)
         assert len(kspace.shape) == 4"""
-
-        if isinstance(target, torch.Tensor):
-            # target이 [H,W] 또는 [C,H,W]라고 가정
-            if target.dim() == 2:      # [H,W]
-                t = target.unsqueeze(0).unsqueeze(0)   # [1,1,H,W]
-            elif target.dim() == 3:    # [C,H,W]
-                t = target.unsqueeze(0)                # [1,C,H,W]
-            else:
-                t = target                             # [N,C,H,W]도 수용
-        
-            if t.shape[-2] < 384 or t.shape[-1] < 384:
-                t = _center_pad_to(t, 384, 384)
-            if t.shape[-2:] != (384, 384):
-                t = center_crop(t, (384, 384))
-        
-            # 원래 차원으로 되돌리기
-            if target.dim() == 2:
-                target = t.squeeze(0).squeeze(0)   # [H_des,W_des]
-            elif target.dim() == 3:
-                target = t.squeeze(0)              # [C,H_des,W_des]
-            else:
-                target = t                         # [N,C,H_des,W_des]
         
         seed = None if not self.use_seed else tuple(map(ord, fname))
         padding = None  # 필요시 attrs에서 padding_left/right 읽어 설정
@@ -126,7 +102,7 @@ class VarNetDataTransform:
             masked_kspace, mask = apply_mask(kspace, self.mask_func, seed, padding)
             
         elif self.isforward: #reconstruct
-            if "acc4" in str(data_path):
+            if "acc4" in str(self.data_path):
                cf, ac = [0.08], [4]
             else:
                 cf, ac = [0.04], [8]
